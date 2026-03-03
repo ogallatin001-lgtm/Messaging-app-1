@@ -48,6 +48,18 @@ class MessagingApp {
     // =====================
 
     setupSocket() {
+        this.socket.on('connect', () => {
+            console.log('Socket connected:', this.socket.id);
+        });
+
+        this.socket.on('disconnect', () => {
+            console.log('Socket disconnected');
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('Connect error:', error);
+        });
+
         // receive a message from the server and save it locally
         this.socket.on('message', (msg) => {
             // save message so history persists offline as well
@@ -906,6 +918,20 @@ class MessagingApp {
         const username = document.getElementById('loginUsername').value;
         const password = document.getElementById('loginPassword').value;
         const errorDiv = document.getElementById('loginError');
+        
+        // Validate inputs
+        if (!username || !password) {
+            errorDiv.textContent = 'Please enter username and password';
+            return;
+        }
+
+        // Check socket connection
+        if (!this.socket.connected) {
+            errorDiv.textContent = 'Not connected to server. Please refresh the page.';
+            console.error('Socket not connected:', this.socket.connected);
+            return;
+        }
+        
         // send credentials to server
         this.socket.emit('login', { username, password }, (resp) => {
             if (resp.success) {
@@ -926,10 +952,30 @@ class MessagingApp {
         const password = document.getElementById('signupPassword').value;
         const password2 = document.getElementById('signupPassword2').value;
         const errorDiv = document.getElementById('signupError');
+        
+        // Validate inputs
+        if (!username || !password || !password2) {
+            errorDiv.textContent = 'Please fill in all fields';
+            return;
+        }
+        
         if (password !== password2) {
             errorDiv.textContent = 'Passwords do not match';
             return;
         }
+        
+        if (password.length < 6) {
+            errorDiv.textContent = 'Password must be at least 6 characters';
+            return;
+        }
+
+        // Check socket connection
+        if (!this.socket.connected) {
+            errorDiv.textContent = 'Not connected to server. Please refresh the page.';
+            console.error('Socket not connected:', this.socket.connected);
+            return;
+        }
+        
         // forward to server
         this.socket.emit('signup', { username, password }, (resp) => {
             if (resp.success) {
