@@ -24,7 +24,7 @@ This app uses browser `localStorage` to store:
 - All direct messages and room conversations
 - Room definitions: password, participants, and message history
 
-Since everything is stored locally in your browser, different browsers/devices won't sync automatically. QR export/import lets you manually transfer data between devices.
+A new optional server component allows the app to sync data across devices in real time. When run with a backend, users and messages are stored in the server's memory and clients communicate via WebSocket (socket.io). You can still use the original local‑only mode, but it will not share data between browsers/devices. QR export/import remains available for manual transfer.
 
 ### Direct Messages
 1. Log in to your account
@@ -59,7 +59,14 @@ Since everything is stored locally in your browser, different browsers/devices w
 
 ### Log Out
 - Click the "Logout" button in the top right
+### Running with a Server
 
+1. Make sure you have Node.js installed.
+2. Run `npm install` in the project root to fetch dependencies.
+3. Start the server with `npm start` (defaults to port 3000).
+4. Open `http://localhost:3000` in multiple browsers/devices on the same network — they will now share accounts and messages instantly.
+
+*The simplistic server keeps all data in memory and is for demonstration only. For production use, replace the in‑memory store with a database and add authentication/validation.*
 ## Technical Details
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript

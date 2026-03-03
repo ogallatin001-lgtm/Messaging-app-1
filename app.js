@@ -1,4 +1,9 @@
 // =====================
+// Global App Instance
+// =====================
+let app = null;
+
+// =====================
 // Data Management
 // =====================
 
@@ -7,6 +12,11 @@ class MessagingApp {
         this.currentUser = null;
         this.currentChat = null;
         this.currentChatType = 'user';
+
+        // network connection
+        this.socket = io();
+        this.setupSocket();
+
         this.loadCurrentUser();
         this.initializeEventListeners();
         this.render();
@@ -31,6 +41,35 @@ class MessagingApp {
 
     get FRIEND_REQUESTS_KEY() {
         return 'messaging_app_friend_requests';
+    }
+
+    // =====================
+    // Network / Socket Helpers
+    // =====================
+
+    setupSocket() {
+        // receive a message from the server and save it locally
+        this.socket.on('message', (msg) => {
+            // save message so history persists offline as well
+            this.saveMessage(msg.from, msg.to, {
+                type: msg.type || 'text',
+                text: msg.text,
+                filename: msg.filename,
+                data: msg.data
+            });
+
+            // if currently in this conversation, re-render
+            if (this.currentChat === msg.from || this.currentChat === msg.to) {
+                this.renderMessages();
+            }
+        });
+
+        // list of active users (optionally)
+        this.socket.on('users', (list) => {
+            // naive: store in localStorage for UI convenience
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list.reduce((acc,u)=>{acc[u]= {username:u};return acc;}, {})));
+            if (this.currentChatType === 'user') this.updateAppUI();
+        });
     }
 
     // =====================
@@ -380,14 +419,34 @@ class MessagingApp {
 
     sendTextMessage(text) {
         if (!this.currentChat || !text.trim()) return false;
-        this.saveMessage(this.currentUser.username, this.currentChat, { type: 'text', text });
+        const msg = {
+            from: this.currentUser.username,
+            to: this.currentChat,
+            type: 'text',
+            text,
+            timestamp: new Date().toISOString()
+        };
+        this.socket.emit('sendMessage', msg);
+        // also save locally for history/offline
+        this.saveMessage(msg.from, msg.to, { type: msg.type, text: msg.text });
         return true;
     }
 
     sendFileMessage(fileObj) {
         if (!this.currentChat || !fileObj) return false;
+        const msg = {
+            from: this.currentUser.username,
+            to: this.currentChat,
+            type: 'file',
+            filename: fileObj.filename,
+            data: fileObj.data,
+            timestamp: new Date().toISOString()
+        };
+        // send to server for delivery
+        this.socket.emit('sendMessage', msg);
+        // also keep local copy
         try {
-            this.saveMessage(this.currentUser.username, this.currentChat, Object.assign({ type: 'file' }, fileObj));
+            this.saveMessage(msg.from, msg.to, Object.assign({ type: 'file' }, fileObj));
             return true;
         } catch (err) {
             console.error('error saving file message', err);
@@ -847,15 +906,19 @@ class MessagingApp {
         const username = document.getElementById('loginUsername').value;
         const password = document.getElementById('loginPassword').value;
         const errorDiv = document.getElementById('loginError');
-        const result = this.login(username, password);
-        if (result.success) {
-            document.getElementById('loginUsername').value = '';
-            document.getElementById('loginPassword').value = '';
-            errorDiv.textContent = '';
-            this.render();
-        } else {
-            errorDiv.textContent = result.error;
-        }
+        // send credentials to server
+        this.socket.emit('login', { username, password }, (resp) => {
+            if (resp.success) {
+                this.currentUser = resp.user;
+                this.saveCurrentUser();
+                document.getElementById('loginUsername').value = '';
+                document.getElementById('loginPassword').value = '';
+                errorDiv.textContent = '';
+                this.render();
+            } else {
+                errorDiv.textContent = resp.error || 'Login failed';
+            }
+        });
     }
 
     handleSignup() {
@@ -867,16 +930,20 @@ class MessagingApp {
             errorDiv.textContent = 'Passwords do not match';
             return;
         }
-        const result = this.signup(username, password);
-        if (result.success) {
-            document.getElementById('signupUsername').value = '';
-            document.getElementById('signupPassword').value = '';
-            document.getElementById('signupPassword2').value = '';
-            errorDiv.textContent = '';
-            this.render();
-        } else {
-            errorDiv.textContent = result.error;
-        }
+        // forward to server
+        this.socket.emit('signup', { username, password }, (resp) => {
+            if (resp.success) {
+                this.currentUser = resp.user;
+                this.saveCurrentUser();
+                document.getElementById('signupUsername').value = '';
+                document.getElementById('signupPassword').value = '';
+                document.getElementById('signupPassword2').value = '';
+                errorDiv.textContent = '';
+                this.render();
+            } else {
+                errorDiv.textContent = resp.error || 'Signup failed';
+            }
+        });
     }
 
     handleSendMessage() {
@@ -886,6 +953,7 @@ class MessagingApp {
         if (this.currentChatType === 'room') {
             this.saveRoomMessage(this.currentChat, this.currentUser.username, { type: 'text', text });
         } else {
+            // send via socket; message handler will store and render for us
             this.sendTextMessage(text);
         }
         input.value = '';
@@ -1068,9 +1136,9 @@ class MessagingApp {
 
 let app;
 
-document.addEventListener('DOMContentLoaded', () => {
-    app = new MessagingApp();
-});
+// =====================
+// Global Helper Functions
+// =====================
 
 function toggleAuthForm(e) {
     e.preventDefault();
@@ -1085,3 +1153,11 @@ function closeQrExportModal() {
 function closeQrImportModal() {
     if (app) app.closeQrImportModal();
 }
+
+// =====================
+// App Initialization
+// =====================
+
+document.addEventListener('DOMContentLoaded', () => {
+    app = new MessagingApp();
+});
